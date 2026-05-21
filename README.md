@@ -1,110 +1,82 @@
-# Data Science Project Boilerplate
+# Logistic Regression Classifier — Bank Marketing Campaign
 
-This boilerplate is designed to kickstart data science projects by providing a basic setup for database connections, data processing, and machine learning model development. It includes a structured folder organization for your datasets and a set of pre-defined Python packages necessary for most data science tasks.
+> Binary classification pipeline on 41,000+ bank customer records: full EDA with feature engineering, chi-square feature selection, and a Logistic Regression model tuned via GridSearchCV across 1,400 model combinations — achieving 92.2% accuracy.
 
-## Structure
+---
 
-The project is organized as follows:
+## Problem
 
-- **`src/app.py`** → Main Python script where your project will run.
-- **`src/explore.ipynb`** → Notebook for exploration and testing. Once exploration is complete, migrate the clean code to `app.py`.
-- **`src/utils.py`** → Auxiliary functions, such as database connection.
-- **`requirements.txt`** → List of required Python packages.
-- **`models/`** → Will contain your SQLAlchemy model classes.
-- **`data/`** → Stores datasets at different stages:
-  - **`data/raw/`** → Raw data.
-  - **`data/interim/`** → Temporarily transformed data.
-  - **`data/processed/`** → Data ready for analysis.
+A Portuguese bank wants to identify which existing customers are likely to subscribe to a long-term deposit following a phone marketing campaign. Focusing outreach on high-probability customers reduces wasted calls and improves campaign ROI. This is a binary classification problem: did the customer subscribe (`yes`) or not (`no`)?
 
+## Dataset
 
-## ⚡ Initial Setup in Codespaces (Recommended)
+- **Source:** Bank Marketing Campaign dataset (UCI / 4Geeks)
+- **Size:** 41,188 rows × 21 columns → 41,176 after removing 12 duplicates
+- **Target:** `y` — subscribed to long-term deposit (yes/no)
+- **Class balance:** ~89% no / ~11% yes — heavily imbalanced
 
-No manual setup is required, as **Codespaces is automatically configured** with the predefined files created by the academy for you. Just follow these steps:
+**Column types:**
 
-1. **Wait for the environment to configure automatically**.
-   - All necessary packages and the database will install themselves.
-   - The automatically created `username` and `db_name` are in the **`.env`** file at the root of the project.
-2. **Once Codespaces is ready, you can start working immediately**.
+| Type | Columns |
+|---|---|
+| Numerical | age, duration, campaign, pdays, previous, emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m, nr.employed |
+| Categorical | job, marital, education, default, housing, loan, contact, month, day_of_week, poutcome, y |
 
+## EDA & Preprocessing Pipeline
 
-## 💻 Local Setup (Only if you can't use Codespaces)
+| Step | Action |
+|---|---|
+| Duplicates | 12 removed → 41,176 rows |
+| Feature engineering | `pdays=999` (sentinel "never contacted") → binary `was_previously_contacted` column |
+| Dropped columns | `default` (near-zero variance, ~99% "no") and `pdays` (replaced by engineered feature) |
+| Outlier removal | `duration` capped at 644.5s; `campaign` capped at 6 calls → 35,951 rows |
+| Scaling | MinMaxScaler on all feature columns |
+| Feature selection | SelectKBest (chi², k=7) — applied to training set only to prevent data leakage |
 
-**Prerequisites**
+**Selected features:** `month`, `was_previously_contacted`, `previous`, `poutcome`, `emp.var.rate`, `euribor3m`, `nr.employed`
 
-Make sure you have Python 3.11+ installed on your machine. You will also need pip to install the Python packages.
+**Key EDA finding:** `duration` (call length) is the single strongest predictor of subscription — but it constitutes data leakage since it's only known after the call ends. Dropped from the final feature set for a deployment-realistic model.
 
-**Installation**
+## Model Results
 
-Clone the project repository to your local machine.
+| Model | Accuracy |
+|---|---|
+| Baseline (default hyperparameters) | **92.07%** |
+| Optimised (GridSearchCV) | **92.16%** |
 
-Navigate to the project directory and install the required Python packages:
+**GridSearchCV search space:** C (7 values) × penalty (4 options) × solver (5 options) = 140 combinations × 10-fold CV = **1,400 models trained**
+
+**Best hyperparameters:** `C=0.1`, `penalty=l2`, `solver=liblinear`
+
+The accuracy improvement is modest (+0.08%) because the baseline model with default settings was already well-configured for this dataset. The value of grid search here is principled confirmation, not a dramatic lift.
+
+## Key Takeaways
+
+- **Feature engineering beats feature selection:** Converting the sentinel `pdays=999` into a meaningful binary flag captures real information that raw numbers hide.
+- **Data leakage is subtle:** `duration` seems like a legitimate feature but knowing call length before making the call is impossible — including it would inflate training accuracy while producing a model that cannot be deployed.
+- **High accuracy ≠ good model when classes are imbalanced:** 92% sounds strong, but a naive model predicting "no" for every customer would achieve ~89%. Precision and recall on the minority "yes" class tell the real story.
+
+## Tech Stack
+
+`Python` · `scikit-learn` · `pandas` · `NumPy` · `Matplotlib` · `Seaborn`
+
+## Run It Locally
 
 ```bash
+git clone https://github.com/matthewkane-ml/ML_LogisticRegression_MTK.git
+cd ML_LogisticRegression_MTK
 pip install -r requirements.txt
+jupyter notebook src/app.ipynb
 ```
 
-**Create a database (if necessary)**
+The trained model is saved to `models/` via `pickle`.
 
-Create a new database within the Postgres engine by customizing and executing the following command:
+## What I'd Do Next
 
-```bash
-$ psql -U postgres -c "DO \$\$ BEGIN 
-    CREATE USER my_user WITH PASSWORD 'my_password'; 
-    CREATE DATABASE my_database OWNER my_user; 
-END \$\$;"
-```
-Connect to the Postgres engine to use your database, manipulate tables, and data:
+- Evaluate on **precision, recall, and F1** for the minority class rather than overall accuracy — the business cost of missing a likely subscriber is much higher than a wasted call
+- Try **class_weight="balanced"** or **SMOTE** oversampling to improve recall on the "yes" class
+- Build a **calibration curve** to check whether the model's predicted probabilities (not just the binary predictions) are reliable enough to use as a customer ranking score
 
-```bash
-$ psql -U my_user -d my_database
-```
+---
 
-Once inside PSQL, you can create tables, run queries, insert, update, or delete data, and much more!
-
-**Environment Variables**
-
-Create a .env file in the root directory of the project to store your environment variables, such as your database connection string:
-
-```makefile
-DATABASE_URL="postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DB_NAME>"
-
-#example
-DATABASE_URL="postgresql://my_user:my_password@localhost:5432/my_database"
-```
-
-## Running the Application
-
-To run the application, execute the app.py script from the root directory of the project:
-
-```bash
-python src/app.py
-```
-
-## Adding Models
-
-To add SQLAlchemy model classes, create new Python script files within the models/ directory. These classes should be defined according to your database schema.
-
-Example model definition (`models/example_model.py`):
-
-```py
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column
-
-Base = declarative_base()
-
-class ExampleModel(Base):
-    __tablename__ = 'example_table'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(unique=True)
-```
-
-## Working with Data
-
-You can place your raw datasets in the data/raw directory, intermediate datasets in data/interim, and processed datasets ready for analysis in data/processed.
-
-To process data, you can modify the app.py script to include your data processing steps, using pandas for data manipulation and analysis.
-
-## Contributors
-
-This project is maintained by [matthewkane-ml](https://github.com/matthewkane-ml).
+**Author:** Matthew Kane — [LinkedIn](https://www.linkedin.com/in/thomas-k-392094410/) · [GitHub portfolio](https://github.com/matthewkane-ml)
